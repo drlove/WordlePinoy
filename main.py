@@ -36,20 +36,25 @@ def main(page: ft.Page):
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.padding = 20
 
+    # ---------- GAME STATE ----------
     words_list, words_set = load_words()
     if not words_list:
         page.add(ft.Text("words.txt missing or no valid words found"))
         return
 
-    target = random.choice(words_list).lower()
+    target = {"value": random.choice(words_list).lower()}
+    guess_index = {"value": 0}
 
-    # Build board
+    # ---------- UI BUILDERS ----------
     board_tiles = []
-    for _ in range(MAX_GUESSES):
-        row = []
-        for _ in range(WORD_LENGTH):
-            row.append(
-                ft.Container(
+
+    def build_board():
+        board_tiles.clear()
+        rows = []
+        for _ in range(MAX_GUESSES):
+            row = []
+            for _ in range(WORD_LENGTH):
+                tile = ft.Container(
                     content=ft.Text("", size=24, weight=ft.FontWeight.BOLD),
                     width=56,
                     height=56,
@@ -58,13 +63,13 @@ def main(page: ft.Page):
                     border=ft.border.all(1, ft.Colors.GREY),
                     border_radius=6,
                 )
-            )
-        board_tiles.append(row)
+                row.append(tile)
+            board_tiles.append(row)
+            rows.append(ft.Row(row, alignment=ft.MainAxisAlignment.CENTER))
+        return rows
 
-    board_rows = [
-        ft.Row(row, alignment=ft.MainAxisAlignment.CENTER)
-        for row in board_tiles
-    ]
+    board_rows = build_board()
+    board_column = ft.Column(board_rows, spacing=6)
 
     input_field = ft.TextField(
         label="Enter guess",
@@ -73,10 +78,11 @@ def main(page: ft.Page):
     )
 
     submit_btn = ft.ElevatedButton("Submit")
+    restart_btn = ft.OutlinedButton("Restart / New Game")
+
     status_text = ft.Text()
 
-    guess_index = 0
-
+    # ---------- HELPERS ----------
     def update_tile(row, col, letter, color):
         tile = board_tiles[row][col]
         tile.content.value = letter.upper()
@@ -85,9 +91,22 @@ def main(page: ft.Page):
         tile.border = None
         tile.update()
 
-    def submit_guess(e):
-        nonlocal guess_index
+    def disable_input():
+        input_field.disabled = True
+        submit_btn.disabled = True
+        input_field.update()
+        submit_btn.update()
 
+    def enable_input():
+        input_field.disabled = False
+        submit_btn.disabled = False
+        input_field.value = ""
+        input_field.focus()
+        input_field.update()
+        submit_btn.update()
+
+    # ---------- GAME LOGIC ----------
+    def submit_guess(e):
         guess = input_field.value.strip().lower()
 
         if len(guess) != WORD_LENGTH or not guess.isalpha():
@@ -104,7 +123,11 @@ def main(page: ft.Page):
             page.update()
             return
 
-        target_chars = list(target)
+        row = guess_index["value"]
+        if row >= MAX_GUESSES:
+            return
+
+        target_chars = list(target["value"])
         guess_chars = list(guess)
         colors = [ft.Colors.GREY_500] * WORD_LENGTH
 
@@ -123,39 +146,61 @@ def main(page: ft.Page):
                 target_chars[target_chars.index(guess_chars[i])] = None
 
         for i in range(WORD_LENGTH):
-            update_tile(guess_index, i, guess_chars[i], colors[i])
+            update_tile(row, i, guess_chars[i], colors[i])
 
-        guess_index += 1
+        guess_index["value"] += 1
         input_field.value = ""
+        input_field.update()
 
-        if guess == target:
+        if guess == target["value"]:
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"Correct! The word was {target.upper()}")
+                ft.Text(f"Correct! The word was {target['value'].upper()}")
             )
             page.snack_bar.open = True
-            input_field.disabled = True
-            submit_btn.disabled = True
-            remove_word_from_file(target)
+            remove_word_from_file(target["value"])
+            disable_input()
+            page.update()
+            return
 
-        elif guess_index >= MAX_GUESSES:
+        if guess_index["value"] >= MAX_GUESSES:
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"Out of guesses. Word was {target.upper()}")
+                ft.Text(f"Out of guesses. Word was {target['value'].upper()}")
             )
             page.snack_bar.open = True
-            input_field.disabled = True
-            submit_btn.disabled = True
+            disable_input()
+            page.update()
+            return
 
+    def restart_game(e):
+        target["value"] = random.choice(words_list).lower()
+        guess_index["value"] = 0
+
+        # Reset board
+        for row in board_tiles:
+            for tile in row:
+                tile.content.value = ""
+                tile.bgcolor = ft.Colors.WHITE
+                tile.border = ft.border.all(1, ft.Colors.GREY)
+                tile.update()
+
+        enable_input()
         page.update()
 
+    # ---------- EVENTS ----------
     submit_btn.on_click = submit_guess
     input_field.on_submit = submit_guess
+    restart_btn.on_click = restart_game
 
+    # ---------- LAYOUT ----------
     page.add(
-        ft.Column(board_rows, spacing=6),
+        board_column,
+        ft.Container(height=12),
         ft.Row(
             [input_field, submit_btn],
             alignment=ft.MainAxisAlignment.CENTER,
         ),
+        ft.Container(height=8),
+        restart_btn,
         status_text,
     )
 
